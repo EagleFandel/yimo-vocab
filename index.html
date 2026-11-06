@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一模卷词汇 · 背诵王（音标版）</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hidden-text { filter: blur(5px); transition: filter 0.3s; cursor: pointer; }
+        .hidden-text:hover { filter: blur(0); }
+        .reveal { filter: blur(0) !important; }
+
+        .card-inner { transition: transform 0.5s; transform-style: preserve-3d; }
+        .card-flipped { transform: rotateY(180deg); }
+        .card-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .card-back { transform: rotateY(180deg); }
+        .perspective-1000 { perspective: 1000px; }
+
+        .option-btn { transition: all 0.2s; }
+        .option-btn:active { transform: scale(0.98); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen pb-10 font-sans text-slate-900">
+
+    <nav class="bg-blue-600 text-white px-3 py-2 sticky top-0 z-20 shadow-lg">
+        <div class="max-w-4xl mx-auto flex justify-between items-center gap-2">
+            <h1 class="text-base font-bold whitespace-nowrap shrink-0">一模卷词汇<span class="hidden sm:inline text-xs font-normal text-blue-200 ml-2">50条 · 音标版</span></h1>
+            <div class="flex bg-blue-700 rounded-lg p-1 shrink-0">
+                <button onclick="setView('tonight')" id="nav-tonight" class="px-2.5 py-1.5 rounded-md transition text-xs font-medium whitespace-nowrap">🌙 今晚</button>
+                <button onclick="setView('list')" id="nav-list" class="px-2.5 py-1.5 rounded-md transition text-xs font-medium whitespace-nowrap">列表</button>
+                <button onclick="setView('flash')" id="nav-flash" class="px-2.5 py-1.5 rounded-md transition text-xs font-medium whitespace-nowrap">卡片</button>
+                <button onclick="setView('quiz')" id="nav-quiz" class="px-2.5 py-1.5 rounded-md transition text-xs font-medium whitespace-nowrap">测验</button>
+                <button onclick="setView('mistake')" id="nav-mistake" class="px-2.5 py-1.5 rounded-md transition text-xs font-medium text-blue-100 whitespace-nowrap">错词本</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-2xl mx-auto mt-6 px-4">
+
+        <!-- 0. 今晚模式：闪卡自判 + 错词定时回来 -->
+        <div id="tonightView" class="hidden pt-2">
+            <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4 rounded-r-lg">
+                <p class="text-sm text-blue-700 font-medium" id="tonightHint">第①步 认脸：看英文想中文 → 点卡片翻面 → 自判。不会的词 5秒/12秒/30秒后会自己回来找你。</p>
+            </div>
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-xs font-bold text-slate-400 italic">
+                    <span id="tonightPhaseLabel">PHASE 1 · 认脸</span>
+                    <span id="tonightProgressText" class="ml-2">0 / 0</span>
+                </div>
+                <div class="text-xs text-rose-500 font-bold" id="tonightErrCount"></div>
+            </div>
+            <div class="mb-5">
+                <div class="w-full bg-slate-200 h-1.5 rounded-full">
+                    <div id="tonightProgressBar" class="bg-blue-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="perspective-1000 w-full h-[58vh] min-h-[320px] relative cursor-pointer select-none" onclick="flipTonight()">
+                <div id="tonightCardInner" class="card-inner w-full h-full relative">
+                    <div class="card-face absolute inset-0 bg-white shadow-xl rounded-3xl flex flex-col items-center justify-center border-2 border-blue-50 p-6 text-center overflow-y-auto">
+                        <span id="tonightFrontTag" class="text-blue-400 text-xs font-bold tracking-widest mb-4 uppercase">VOCABULARY</span>
+                        <div id="tonightFront" class="text-2xl font-bold text-slate-800 leading-snug">...</div>
+                        <div id="tonightFrontPh" class="text-slate-400 text-sm mt-3"></div>
+                    </div>
+                    <div class="card-face card-back absolute inset-0 bg-blue-600 shadow-xl rounded-3xl flex flex-col items-center justify-center p-6 text-center text-white overflow-y-auto">
+                        <span id="tonightBackTag" class="text-blue-200 text-xs font-bold tracking-widest mb-3 uppercase">DEFINITION</span>
+                        <div id="tonightBackEn" class="text-sm font-bold text-blue-50 leading-snug mb-2"></div>
+                        <div id="tonightBack" class="text-xl font-medium leading-snug"></div>
+                        <div id="tonightBackPh" class="text-blue-200 text-sm mt-2"></div>
+                        <div id="tonightExample" class="text-sm text-blue-100 mt-3 italic"></div>
+                        <div id="tonightEty" class="text-xs text-blue-200 mt-3 leading-relaxed text-left px-2"></div>
+                        <button onclick="event.stopPropagation();speakSlow(tonight.queue[tonight.idx].en)" class="mt-4 text-xs bg-blue-500 hover:bg-blue-400 px-4 py-2 rounded-full font-bold">🐢 慢速重读</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tonightJudge" class="hidden flex justify-center mt-6 gap-4">
+                <button onclick="judgeTonight(false)" class="bg-rose-100 text-rose-600 px-8 py-3 rounded-full font-bold hover:bg-rose-200 transition text-lg">✗ 不会</button>
+                <button onclick="judgeTonight(true)" class="bg-blue-600 text-white px-8 py-3 rounded-full font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition text-lg">✓ 会</button>
+            </div>
+            <div id="tonightTap" class="text-center mt-6 text-slate-400 text-sm">👆 点卡片翻面核对</div>
+
+            <div id="tonightDone" class="hidden text-center space-y-5 py-10">
+                <div class="text-5xl">🌙</div>
+                <h2 class="text-2xl font-bold">全部连对，放行！</h2>
+                <p class="text-slate-500" id="tonightDoneMsg">去睡吧。睡前/明早到「错词本」再扫一轮。</p>
+                <button onclick="startTonight()" class="bg-blue-600 text-white px-10 py-3 rounded-full font-bold hover:bg-blue-700">再来一轮</button>
+            </div>
+        </div>
+
+        <!-- 1. 列表视图 -->
+        <div id="listView" class="space-y-4 hidden">
+            <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4 rounded-r-lg flex justify-between items-center">
+                <p class="text-sm text-blue-700 font-medium">🔊 点喇叭听发音 · 点模糊的中文揭晓</p>
+                <span id="totalCount" class="text-xs bg-blue-200 px-2 py-1 rounded text-blue-800 font-bold"></span>
+            </div>
+            <div id="vocabList" class="grid gap-3"></div>
+        </div>
+
+        <!-- 2. 闪卡视图（自由翻） -->
+        <div id="flashView" class="hidden pt-6">
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-xs font-bold text-slate-400 italic">
+                    <span>LEARNING PROGRESS</span>
+                    <span id="flashProgressText" class="ml-2">0 / 0</span>
+                </div>
+                <div class="flex bg-slate-100 rounded-full p-1 text-xs font-bold">
+                    <button onclick="setFlashMode('en2cn')" id="fm-en2cn" class="px-3 py-1 rounded-full transition">英➔中</button>
+                    <button onclick="setFlashMode('cn2en')" id="fm-cn2en" class="px-3 py-1 rounded-full transition">中➔英</button>
+                    <button onclick="setFlashMode('both')" id="fm-both" class="px-3 py-1 rounded-full transition">双语同显</button>
+                </div>
+            </div>
+            <div class="mb-6">
+                <div class="w-full bg-slate-200 h-1.5 rounded-full">
+                    <div id="flashProgressBar" class="bg-blue-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="perspective-1000 w-full h-[58vh] min-h-[320px] relative cursor-pointer select-none" onclick="flipCard()">
+                <div id="cardInner" class="card-inner w-full h-full relative">
+                    <div class="card-face absolute inset-0 bg-white shadow-xl rounded-3xl flex flex-col items-center justify-center border-2 border-blue-50 p-6 text-center overflow-y-auto">
+                        <span id="flashFrontTag" class="text-blue-400 text-xs font-bold tracking-widest mb-4 uppercase">Vocabulary</span>
+                        <div id="flashFront" class="text-2xl font-bold text-slate-800 leading-snug">...</div>
+                        <div id="flashFrontPh" class="text-slate-400 text-sm mt-3"></div>
+                    </div>
+                    <div class="card-face card-back absolute inset-0 bg-blue-600 shadow-xl rounded-3xl flex flex-col items-center justify-center p-6 text-center text-white overflow-y-auto">
+                        <span id="flashBackTag" class="text-blue-200 text-xs font-bold tracking-widest mb-3 uppercase">Definition</span>
+                        <div id="flashBack" class="text-xl font-medium leading-snug">...</div>
+                        <div id="flashBackPh" class="text-blue-200 text-sm mt-2"></div>
+                        <div id="flashExample" class="text-sm text-blue-100 mt-3 italic"></div>
+                        <div id="flashEty" class="text-xs text-blue-200 mt-3 leading-relaxed text-left px-2"></div>
+                        <button onclick="event.stopPropagation();speakSlow(vocabData[flashIdx].en)" class="mt-4 text-xs bg-blue-500 hover:bg-blue-400 px-4 py-2 rounded-full font-bold">🐢 慢速重读</button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-center mt-8 gap-4">
+                <button onclick="prevFlashCard()" class="bg-slate-200 text-slate-600 px-6 py-3 rounded-full font-bold hover:bg-slate-300 transition">PREV</button>
+                <button onclick="nextFlashCard()" class="bg-blue-600 text-white px-10 py-3 rounded-full font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition">NEXT</button>
+            </div>
+        </div>
+
+        <!-- 3. 测验视图 -->
+        <div id="quizView" class="hidden">
+            <div class="bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
+                <div class="w-full bg-slate-100 h-2 rounded-full mb-8 overflow-hidden">
+                    <div id="quizProgress" class="bg-blue-500 h-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <div id="quizContent">
+                    <div class="text-center mb-8">
+                        <div id="quizTypeLabel" class="text-xs font-bold text-blue-400 uppercase tracking-widest mb-2">QUIZ MODE</div>
+                        <div id="quizQuestion" class="text-2xl font-bold text-slate-800 px-4 leading-snug">---</div>
+                    </div>
+                    <div id="optionsContainer" class="grid gap-3"></div>
+                    <div id="quizFeedback" class="text-center h-6 mt-6 font-bold text-sm"></div>
+                </div>
+                <div id="quizResult" class="hidden text-center space-y-6 py-10">
+                    <div class="text-5xl">🏆</div>
+                    <h2 class="text-2xl font-bold">Great Job!</h2>
+                    <p id="finalScore" class="text-slate-500 font-medium"></p>
+                    <button onclick="startQuiz()" class="bg-blue-600 text-white px-10 py-3 rounded-full font-bold hover:bg-blue-700">TRY AGAIN</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 错词本视图 -->
+        <div id="mistakeView" class="hidden space-y-4">
+            <div class="bg-rose-50 border-l-4 border-rose-400 p-4 mb-4 rounded-r-lg flex justify-between items-center">
+                <p class="text-sm text-rose-700 font-medium">📝 今晚模式和测验里的错词都记在这（跨页面保留）</p>
+                <button onclick="clearMistakes()" class="text-xs bg-rose-200 px-3 py-1 rounded text-rose-800 font-bold hover:bg-rose-300 transition">清空错词</button>
+            </div>
+            <button id="drillMistakesBtn" onclick="drillMistakes()" class="hidden w-full bg-rose-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-rose-600 transition">🔁 只滚这些错词</button>
+            <div id="mistakeList" class="grid gap-3"></div>
+            <div id="emptyMistakeMsg" class="hidden text-center text-slate-400 py-10">
+                <div class="text-4xl mb-3">🎉</div>
+                <p>太棒啦！目前没有任何错词记录～</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        /* 来源：一模卷词汇截图，逐条录入 50 条；音标按记忆锚点词标注 */
+        const rawData = [
+    /* ===== 组1 基础搭配 1-10 ===== */
+    { en: "As the Internet became more accessible, ...", cn: "随着互联网越来越普及/容易获取", ex: "As the Internet became more accessible, online shopping took off.", g: 1 },
+    { en: "travel long distance", cn: "长途旅行；远行", ex: "Some patients travel long distance for treatment.", g: 1 },
+    { en: "be eager to do sth / be eager for sth", cn: "渴望做某事 / 渴望得到某物", ex: "She is eager to prove herself.", g: 1 },
+    { en: "cut seconds off ...", cn: "缩短几秒；减少……的时间", ex: "The new route cuts 20 minutes off the journey.", g: 1 },
+    { en: "Lack of willpower will lead to failure.", cn: "缺乏意志力会导致失败", ex: "Lack of willpower will lead to failure.", g: 1 },
+    { en: "cite sth as ...", cn: "把某事引用为……；援引……作为……", ex: "He cited the study as proof of his point.", g: 1 },
+    { en: "the top barrier/obstacle to sth/doing", cn: "某事/做某事最大的障碍", ex: "Cost is the top barrier to going abroad.", g: 1 },
+    { en: "consistently", cn: "adv. 一贯地；始终如一地", ex: "He has consistently refused to comment.", g: 1 },
+    { en: "highly disciplined people", cn: "高度自律的人", ex: "Highly disciplined people plan their day the night before.", g: 1 },
+    { en: "make persistent efforts", cn: "坚持不懈地努力", ex: "She made persistent efforts to improve her English.", g: 1 },
+
+    /* ===== 组2 动词与词族 11-20 ===== */
+    { en: "urge sb to do sth / one's urge to do", cn: "敦促某人做某事 / 做某事的冲动", ex: "They urged the government to act at once.", g: 2 },
+    { en: "draw close / draw near / draw on ...", cn: "靠近，接近 / 临近 / 借鉴，利用", ex: "We can draw on his experience.", g: 2 },
+    { en: "after-sales service", cn: "售后服务", ex: "Good after-sales service keeps customers loyal.", g: 2 },
+    { en: "lengthy", cn: "adj. 漫长的；冗长的", ex: "After a lengthy discussion, they reached a deal.", g: 2 },
+    { en: "habitual", cn: "adj. 习惯性的；惯常的", ex: "He is a habitual early riser.", g: 2 },
+    { en: "take in (3)", cn: "吸收；理解；欺骗", ex: "It took me a while to take in the news.", g: 2 },
+    { en: "sort out", cn: "分类整理；解决", ex: "We need to sort out the paperwork first.", g: 2 },
+    { en: "restore (2)", cn: "恢复；修复，修缮", ex: "The old building was restored to its original state.", g: 2 },
+    { en: "digest v./n.", cn: "消化(v.)；摘要/文摘(n.)", ex: "Give me time to digest the information.", g: 2 },
+    { en: "have an appetite for sth", cn: "对……有胃口，食欲 / 欲望", ex: "He has an appetite for risk.", g: 2 },
+
+    /* ===== 组3 多义与辨析 21-30 ===== */
+    { en: "apparently", cn: "adv. 显然地；明显地", ex: "Apparently, she knew all along.", g: 3 },
+    { en: "namely", cn: "adv. 即；也就是", ex: "Two students, namely Tom and Ann, failed.", g: 3 },
+    { en: "consume (3)", cn: "v. 消耗；消费；吃喝", ex: "The old car consumes a lot of fuel.", g: 3 },
+    { en: "outlast / outnumber / outweigh / outperform", cn: "v. 比…持久 / 数量上超过 / 比…更重要 / 胜过", ex: "The benefits far outweigh the risks.", g: 3 },
+    { en: "electronic receipt", cn: "电子票据；电子收据", ex: "Keep the electronic receipt in case of refunds.", g: 3 },
+    { en: "seemingly", cn: "adv. 表面上；似乎", ex: "It was a seemingly harmless question.", g: 3 },
+    { en: "literacy / literate / illiterate", cn: "n. 读写能力 / adj. 有读写能力的 / 文盲的", ex: "Adult literacy rates are rising.", g: 3 },
+    { en: "blank n./adj.", cn: "空白处(n.) / 空白的(adj.)", ex: "Fill in the blanks with proper words.", g: 3 },
+    { en: "The cash is fake.", cn: "这现金是假的（赝品）。", ex: "The cash is fake, so the shop refused it.", g: 3 },
+    { en: "make an attempt to do sth", cn: "尝试做某事", ex: "He made an attempt to escape.", g: 3 },
+
+    /* ===== 组4 词形变化 31-40 ===== */
+    { en: "scare sb / feel scared / scary", cn: "v. 吓唬某人 / adj. 感到害怕的 / 令人害怕的", ex: "The movie scared me, and I felt scared for hours.", g: 4 },
+    { en: "for each subsequent tooth", cn: "对于之后长出的每一颗牙", ex: "Each subsequent tooth grew stronger.", g: 4 },
+    { en: "dash off a note", cn: "匆匆写一张便条", ex: "She dashed off a note and ran to class.", g: 4 },
+    { en: "a make-up email address", cn: "一个虚假的邮箱地址", ex: "He registered with a make-up email address.", g: 4 },
+    { en: "treat rarity as a strategy", cn: "把稀缺性当作一种策略", ex: "The brand treats rarity as a strategy.", g: 4 },
+    { en: "takeaway (2)", cn: "外卖；要点", ex: "The takeaway is simple: practise daily.", g: 4 },
+    { en: "limited-edition runs", cn: "限量版批次", ex: "The company does limited-edition runs each spring.", g: 4 },
+    { en: "time-boxed releases", cn: "限时发售", ex: "Time-boxed releases create a sense of urgency.", g: 4 },
+    { en: "artifact", cn: "n. 文物", ex: "The museum displays ancient artifacts.", g: 4 },
+    { en: "measure sth by ...", cn: "用……来衡量某物", ex: "Success should not be measured by money.", g: 4 },
+
+    /* ===== 组5 抽象与学术 41-50 ===== */
+    { en: "entitle (2)", cn: "给……权利/资格；给……命名/加标题", ex: "You are entitled to a full refund.", g: 5 },
+    { en: "cultural theft", cn: "文化盗窃", ex: "Copying designs without credit is cultural theft.", g: 5 },
+    { en: "sustain accountability", cn: "维持问责；持续追究责任", ex: "Clear rules help sustain accountability.", g: 5 },
+    { en: "literally (2)", cn: "adv. 字面上地；确实地", ex: "He was literally speechless.", g: 5 },
+    { en: "subjective/objective", cn: "adj. 主观的 / 客观的", ex: "Taste is subjective; data is objective.", g: 5 },
+    { en: "defensive", cn: "adj. 防御性的；有戒备心的", ex: "He got defensive when asked about it.", g: 5 },
+    { en: "reserved and cautious", cn: "矜持而谨慎的", ex: "She stayed reserved and cautious at the meeting.", g: 5 },
+    { en: "keep the electronic receipt properly", cn: "妥善保存电子票据", ex: "Keep the electronic receipt properly for a year.", g: 5 },
+    { en: "it is convenient for sb to do", cn: "对某人来说做……很方便", ex: "It is convenient for me to meet at three.", g: 5 },
+    { en: "the folk culture festival", cn: "民俗文化节", ex: "The folk culture festival draws thousands.", g: 5 }
+];
+
+        let vocabData = [...rawData];
+        let flashIdx = 0, flashMode = 'cn2en';
+        let quizList = [], currentQuizIdx = 0, score = 0;
+
+        /* ===== 错词本：localStorage 持久化 ===== */
+        const LSKEY = 'yimo1-mistakes-v1';
+        let mistakes = JSON.parse(localStorage.getItem(LSKEY) || '[]');
+        function saveMistakes() { localStorage.setItem(LSKEY, JSON.stringify(mistakes)); }
+        function addMistake(item) {
+            if (!mistakes.some(m => m.en === item.en)) { mistakes.push(item); saveMistakes(); }
+        }
+        function removeMistake(item) {
+            mistakes = mistakes.filter(m => m.en !== item.en); saveMistakes();
+        }
+
+        /* ===== 发音 ===== */
+        let voices = [];
+        function loadVoices() { voices = window.speechSynthesis.getVoices(); }
+        loadVoices();
+        if (window.speechSynthesis.onvoiceschanged !== undefined) window.speechSynthesis.onvoiceschanged = loadVoices;
+        function cleanSpeech(t) {
+            t = t.split('/')[0];                       // 只读第一个变体
+            t = t.split('=')[0];                       // 丢掉 "= attractive" 这类同义注释
+            t = t.replace(/\(.*?\)/g, ' ');            // 丢掉括号注释
+            t = t.replace(/…|\.\.\./g, ' ');
+            t = t.replace(/\bsth\b/g, 'something').replace(/\bsb\b/g, 'somebody');
+            return t.replace(/\s+/g, ' ').trim();
+        }
+        function speak(text, rate) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(cleanSpeech(text));
+            u.lang = 'en-US'; u.rate = rate || 0.85;
+            const v = voices.find(v => v.lang.startsWith('en') && v.localService) || voices.find(v => v.lang.startsWith('en'));
+            if (v) u.voice = v;
+            u.onerror = e => { if (e.error !== 'interrupted' && e.error !== 'canceled') console.warn(e.error); };
+            window.speechSynthesis.speak(u);
+        }
+        function speakSlow(text) { speak(text, 0.55); }
+
+        /* 音标：按条目标题查，显示在卡片/列表上辅助拼读 */
+        const PH = {
+            "Character trait / personality trait": "/ˈkærəktər/",
+            "The Chinese character": "/ˈkærəktər/",
+            "The characters in the film": "/ˈkærəktərz/",
+            "Be fascinated with/by sth": "/ˈfæsɪneɪtɪd/",
+            "Fascinating = attractive = appealing": "/ˈfæsɪneɪtɪŋ/",
+            "Identify sth": "/aɪˈdentɪfaɪ/",
+            "Identify with …": "/aɪˈdentɪfaɪ/",
+            "Identity card": "/aɪˈdentəti/",
+            "Participant": "/pɑːrˈtɪsɪpənt/",
+            "Rate sth": "/reɪt/",
+            "The birth/death/interest rate": "/reɪt/",
+            "A number of … / the number of …": "/ˈnʌmbər/",
+            "Agreeable": "/əˈɡriːəbl/",
+            "Sb be lacking in sth = sb lack sth": "/læk/",
+            "The lack of money upset him": "/læk/",
+            "Be defined as … / definition": "/dɪˈfaɪnd/ · /ˌdefɪˈnɪʃn/",
+            "Definite": "/ˈdefɪnət/",
+            "Gender": "/ˈdʒendər/",
+            "Senior (n.)": "/ˈsiːniər/",
+            "Be senior/junior to …": "/ˈsiːniər/ · /ˈdʒuːniər/",
+            "Mature": "/məˈtʊr/",
+            "Nickname": "/ˈnɪkneɪm/",
+            "Be named after …": "/neɪmd/",
+            "Be traced back / dated to …": "/treɪst/",
+            "Specimen": "/ˈspesɪmən/",
+            "Search a place (the room) for sth": "/sɜːrtʃ/",
+            "Property": "/ˈprɑːpərti/",
+            "Be held in trust": "/trʌst/",
+            "Sizable = considerable": "/ˈsaɪzəbl/",
+            "Grant sb the right to do sth": "/ɡrænt/",
+            "Grant (n.)": "/ɡrænt/",
+            "Claim": "/kleɪm/",
+            "Be complicated by …": "/ˈkɑːmplɪkeɪtɪd/",
+            "The complicated situation": "/ˈkɑːmplɪkeɪtɪd/",
+            "Complex": "/kɑːmˈpleks/",
+            "Seek sth (sought-sought)": "/siːk/ · 过去式 /sɔːt/",
+            "Seek to do": "/siːk/",
+            "Do sth on the grounds": "/ɡraʊndz/",
+            "Treasure": "/ˈtreʒər/",
+            "Leave sb doing": "/liːv/",
+            "Get the cat to sit still": "/ɡet/",
+            "A streaming website": "/ˈstriːmɪŋ/",
+            "Tend to do / the tendency to do": "/tend/ · /ˈtendənsi/",
+            "Evidently = obviously": "/ˈevɪdəntli/",
+            "Evidence / There is evidence that …": "/ˈevɪdəns/",
+            "Reserved": "/rɪˈzɜːrvd/",
+            "Reserve": "/rɪˈzɜːrv/",
+            "Role model": "/ˈroʊl ˌmɑːdl/",
+            "Set a good example for …": "/ɪɡˈzæmpl/",
+            "Rule that … / make it a rule that …": "/ruːl/"
+        };
+        function phon(item){ return PH[item.en] || ''; }
+
+        /* 词根/词源注解：拆给能看懂音标的人——记拼写靠词根，不靠谐音 */
+        const ETY = {
+            "Character trait / personality trait": "character 源自希腊语 kharassein（刻、刮）→ 刻在东西上的标记 → 引申为「性格、文字、角色」三个意思全是一条线",
+            "The Chinese character": "同上：汉字就是「刻出来的符号」",
+            "The characters in the film": "同上：角色就是剧本里「刻出来的人物」",
+            "Be fascinated with/by sth": "fascinate 源自拉丁语 fascinum（咒语、魔法）→ 像被施了咒一样被迷住",
+            "Fascinating = attractive = appealing": "fascinate + -ing（令人…的）→ 令人着魔的 = 吸引人的",
+            "Identify sth": "ident- = same（相同）+ -ify（使成为）→ 确认「和档案里是同一个人」= 识别",
+            "Identify with …": "ident- = same → 觉得「和对方是同一类人」= 认同、共鸣",
+            "Identity card": "ident- = same → 证明「你就是你」的卡 = 身份证",
+            "Participant": "part-（部分）+ -cip（拿，如 capture）+ -ant（人）→ 拿一份的人 = 参与者",
+            "Rate sth": "rate 源自拉丁语 reri（计算、估算）→ 打分、比率都从「算」来",
+            "The birth/death/interest rate": "rate = 算出来的比率：出生率/死亡率/利率",
+            "A number of … / the number of …": "a number of = 一些（复数）；the number of = 那个数字（单数）。看有没有 the",
+            "Agreeable": "agree（同意、合拍）+ -able（能…的）→ 让人合得来的 = 惬意的",
+            "Sb be lacking in sth = sb lack sth": "lack 是日耳曼原生词，动词直接跟宾语；be lacking in 是形容词化用法，要加 in",
+            "The lack of money upset him": "lack 作名词时必须加 of：the lack of sth",
+            "Be defined as … / definition": "de-（完全）+ fin-（边界，如 finish/final）→ 划清界限 = 下定义",
+            "Definite": "de- + fin-（边界）→ 界限划清楚的 = 明确的",
+            "Gender": "gen- = 出生、种类（同根 gene / generate / generation）→ 生来的类别 = 性别",
+            "Senior (n.)": "sen- = 老（同根 senate 参议院=老人院、senile 衰老）→ 年长者",
+            "Be senior/junior to …": "senior/junior 是拉丁比较级，后面固定用 to，不用 than（同类：superior/inferior/prior to）",
+            "Mature": "源自拉丁语 maturus（成熟的、时节到了的）；反义 im- + mature = immature",
+            "Nickname": "来自古英语 an eke name（一个额外的名字），eke 的 n 被并过来 → a nickname",
+            "Be named after …": "after = 跟随 → 名字跟随某人 = 以…命名",
+            "Be traced back / dated to …": "trace 源自拉丁语 trahere（拖、拉）→ 顺着痕迹往回拖 = 追溯",
+            "Specimen": "spec- = 看（同根 inspect/spectacle/respect）→ 拿来看的样本 = 标本",
+            "Search a place (the room) for sth": "search 的宾语是「地方」，找的东西放 for 后面：search the room for sth",
+            "Property": "propri- = 自己的（同根 proper 恰当的→自己的才对）→ 属于自己的东西 = 财产",
+            "Be held in trust": "trust = 信任 → 被信任地保管着 = 信托保管",
+            "Sizable = considerable": "size + -able → 有尺寸的、上得了台面的 = 相当大的",
+            "Grant sb the right to do sth": "grant 源自拉丁语 credere（相信）→ 官方「认可」你给的权利/钱",
+            "Grant (n.)": "同上：官方认可给你的钱 = 拨款、助学金",
+            "Claim": "claim 源自拉丁语 clamare（喊，同根 exclaim）→ 大声喊「这是我的！」= 声称/认领",
+            "Be complicated by …": "com-（一起）+ plic（折叠，同根 fold 的拉丁版）→ 折在一起 = 复杂",
+            "The complicated situation": "同上：折在一起、解不开的局面",
+            "Complex": "com- + plex（编、织，和 plic 同源）→ 编织在一起的 = 复杂的；作名词指「织在一起的楼」= 综合楼",
+            "Seek sth (sought-sought)": "seek 是古英语原生词，不规则变形 sought 要单独记",
+            "Seek to do": "seek + to do = 寻求去做 = 试图做",
+            "Do sth on the grounds": "ground 原义「地面」→ 引申「立足点、理由」；注意固定用复数 grounds",
+            "Treasure": "源自希腊语 thesauros（宝库，同根 thesaurus 词库）→ n. 宝藏 → v. 当宝藏一样对待 = 珍惜",
+            "Leave sb doing": "leave 在此 = 让…处于某状态：leave sb doing = 让某人一直在做",
+            "Get the cat to sit still": "get sb/sth to do = 让某人/某物做某事",
+            "A streaming website": "stream 原义「溪流」→ 数据像水一样流过来 = 流媒体/直播",
+            "Tend to do / the tendency to do": "tend 源自拉丁语 tendere（伸展，同根 extend）→ 朝某方向伸展 = 倾向于",
+            "Evidently = obviously": "e-（出来）+ vid（看，同根 video/visible）→ 看得出来的 = 明显地",
+            "Evidence / There is evidence that …": "e- + vid（看）+ -ence（名词）→ 能看出来的东西 = 证据",
+            "Reserved": "re-（回）+ serv（保留，同根 preserve/conserve）→ 把自己收着的 = 内向的",
+            "Reserve": "re- + serv（保留）→ v. 保留/预约；n. 保留区/储备量",
+            "Role model": "role 来自法语 rolle（一卷纸，剧本写在纸卷上）→ 演员拿的纸卷 = 角色",
+            "Set a good example for …": "ex-（出来）+ empt（拿，同根 exempt）→ 拿出来给人看的样板 = 榜样",
+            "Rule that … / make it a rule that …": "rule 源自拉丁语 regula（直尺，同根 regular）→ 拿来量东西的规矩"
+        };
+        function ety(item){ return ETY[item.en] || ''; }
+
+        /* ===== 视图切换 ===== */
+        function setView(view) {
+            ['tonight','list','flash','quiz','mistake'].forEach(v => {
+                const el = document.getElementById(v + 'View');
+                const nav = document.getElementById('nav-' + v);
+                if (el) el.classList.add('hidden');
+                if (nav) { nav.classList.remove('bg-white','text-blue-600'); nav.classList.add('text-blue-100'); }
+            });
+            document.getElementById(view + 'View').classList.remove('hidden');
+            const activeNav = document.getElementById('nav-' + view);
+            if (activeNav) { activeNav.classList.add('bg-white','text-blue-600'); activeNav.classList.remove('text-blue-100'); }
+            if (view === 'list') renderList();
+            if (view === 'flash') showFlash();
+            if (view === 'quiz') startQuiz();
+            if (view === 'mistake') renderMistakes();
+            if (view === 'tonight' && !tonight.running) startTonight();
+        }
+
+        /* ===== 今晚模式 ===== */
+        const RETRY_STEPS = [5000, 12000, 30000]; // 错词 5s/12s/30s 后回来
+        let tonight = { running:false, phase:0, queue:[], idx:0, timerStep:{}, timers:[], doneCount:0, total:0 };
+
+        function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+        function startTonight(onlyItems) {
+            clearTonightTimers();
+            tonight = { running:true, phase:0, queue: shuffle([...(onlyItems || vocabData)]), idx:0, timerStep:{}, timers:[], doneCount:0, total:(onlyItems||vocabData).length };
+            document.getElementById('tonightDone').classList.add('hidden');
+            document.getElementById('tonightHint').textContent = '第①步 认脸：看英文想中文 → 点卡片翻面 → 自判。不会的词 5秒/12秒/30秒后会自己回来找你。';
+            renderTonight();
+        }
+
+        function clearTonightTimers(){ tonight.timers.forEach(t=>clearTimeout(t)); tonight.timers=[]; }
+
+        function tonightDir(){ return tonight.phase === 0 ? 'e2c' : 'c2e'; }
+
+        function renderTonight(){
+            if (tonight.idx >= tonight.queue.length) {
+                if (tonight.phase === 0) { // 认脸扫完 → 进入中→英自测
+                    tonight.phase = 1; tonight.idx = 0; tonight.doneCount = 0;
+                    tonight.queue = shuffle([...tonight.queue]);
+                    document.getElementById('tonightHint').textContent = '第②步 默写自测：看中文想英文（心里默念出声）→ 点卡片翻面核对 → 自判。';
+                    renderTonight(); return;
+                }
+                tonight.running = false;
+                document.getElementById('tonightJudge').classList.add('hidden');
+                document.getElementById('tonightTap').classList.add('hidden');
+                document.getElementById('tonightDone').classList.remove('hidden');
+                document.getElementById('tonightDoneMsg').textContent =
+                    mistakes.length ? `去睡吧。错词本里还剩 ${mistakes.length} 条，睡前/明早再扫一轮。` : '全部拿下，一条错词都没有。去睡吧！';
+                return;
+            }
+            const item = tonight.queue[tonight.idx];
+            const dir = tonightDir();
+            document.getElementById('tonightPhaseLabel').textContent = tonight.phase === 0 ? 'PHASE 1 · 认脸 (英→中)' : 'PHASE 2 · 默写自测 (中→英)';
+            document.getElementById('tonightProgressText').textContent = `${tonight.doneCount} / ${tonight.total}`;
+            document.getElementById('tonightProgressBar').style.width = (tonight.doneCount / tonight.total * 100) + '%';
+            document.getElementById('tonightErrCount').textContent = mistakes.length ? `错词本 ${mistakes.length} 条` : '';
+            document.getElementById('tonightCardInner').classList.remove('card-flipped');
+            document.getElementById('tonightJudge').classList.add('hidden');
+            document.getElementById('tonightTap').classList.remove('hidden');
+            if (dir === 'e2c') {
+                document.getElementById('tonightFrontTag').textContent = 'VOCABULARY';
+                document.getElementById('tonightBackTag').textContent = 'DEFINITION';
+                document.getElementById('tonightFront').textContent = item.en;
+                document.getElementById('tonightFrontPh').textContent = phon(item);
+                document.getElementById('tonightBackEn').textContent = item.en;
+                document.getElementById('tonightBack').textContent = item.cn;
+                document.getElementById('tonightBackPh').textContent = phon(item);
+                speak(item.en);
+            } else {
+                document.getElementById('tonightFrontTag').textContent = '中文 → 想英文';
+                document.getElementById('tonightBackTag').textContent = 'VOCABULARY';
+                document.getElementById('tonightFront').textContent = item.cn;
+                document.getElementById('tonightFrontPh').textContent = '';
+                document.getElementById('tonightBackEn').textContent = item.cn;
+                document.getElementById('tonightBack').textContent = item.en;
+                document.getElementById('tonightBackPh').textContent = phon(item);
+                window.speechSynthesis.cancel();
+            }
+            document.getElementById('tonightExample').textContent = item.ex ? '💬 ' + item.ex : '';
+            document.getElementById('tonightEty').textContent = ety(item) ? '🌱 ' + ety(item) : '';
+        }
+
+        function flipTonight(){
+            if (!tonight.running) return;
+            const inner = document.getElementById('tonightCardInner');
+            if (inner.classList.contains('card-flipped')) return; // 只许翻一次
+            inner.classList.add('card-flipped');
+            document.getElementById('tonightJudge').classList.remove('hidden');
+            document.getElementById('tonightJudge').classList.add('flex');
+            document.getElementById('tonightTap').classList.add('hidden');
+            const item = tonight.queue[tonight.idx];
+            speak(item.en);
+        }
+
+        function scheduleTonightRetry(item){
+            const step = tonight.timerStep[item.en] || 0;
+            if (step >= RETRY_STEPS.length) return;
+            tonight.timerStep[item.en] = step + 1;
+            tonight.timers.push(setTimeout(() => {
+                if (!tonight.running) return;
+                // 插到当前位置之后
+                tonight.queue.splice(Math.min(tonight.idx + 1, tonight.queue.length), 0, item);
+                tonight.total++;
+            }, RETRY_STEPS[step]));
+        }
+
+        function judgeTonight(ok){
+            const item = tonight.queue[tonight.idx];
+            if (ok) { removeMistake(item); delete tonight.timerStep[item.en]; tonight.doneCount++; tonight.idx++; }
+            else { addMistake(item); scheduleTonightRetry(item); tonight.doneCount++; tonight.idx++; }
+            renderTonight();
+        }
+
+        /* ===== 列表 ===== */
+        function renderList() {
+            document.getElementById('totalCount').textContent = vocabData.length + ' ITEMS';
+            document.getElementById('vocabList').innerHTML = vocabData.map(item => `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <button onclick="speak('${item.en.replace(/'/g, "\\'")}')" class="p-2 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition shrink-0">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        </button>
+                        <div>
+                            <div class="font-bold text-slate-800 text-sm">${item.en} <span class="text-slate-400 font-normal">${phon(item)}</span></div>
+                            <div class="text-sm text-slate-400 hidden-text" onclick="this.classList.toggle('reveal')">${item.cn}</div>
+                            ${item.ex ? `<div class="text-xs text-slate-300 italic mt-1">💬 ${item.ex}</div>` : ''}
+                            ${ety(item) ? `<div class="text-xs text-slate-400 mt-1 leading-relaxed">🌱 ${ety(item)}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        /* ===== 自由闪卡（三模式：英→中 / 中→英 / 双语同显） ===== */
+        function setFlashMode(m) {
+            flashMode = m;
+            ['en2cn','cn2en','both'].forEach(x => {
+                const b = document.getElementById('fm-' + x);
+                if (x === m) { b.classList.add('bg-blue-600','text-white'); b.classList.remove('text-slate-600'); }
+                else { b.classList.remove('bg-blue-600','text-white'); b.classList.add('text-slate-600'); }
+            });
+            showFlash();
+        }
+        function showFlash() {
+            const item = vocabData[flashIdx];
+            const inner = document.getElementById('cardInner');
+            inner.classList.remove('card-flipped');
+            const frontTag = document.getElementById('flashFrontTag');
+            const front = document.getElementById('flashFront');
+            const frontPh = document.getElementById('flashFrontPh');
+            const backTag = document.getElementById('flashBackTag');
+            const back = document.getElementById('flashBack');
+            const backPh = document.getElementById('flashBackPh');
+            if (flashMode === 'both') {
+                // 双语同显：正面英+中+音标+词根，一次看全；背面作详解
+                frontTag.textContent = '双语同显 · 先读英文再扫中文';
+                front.innerHTML = `<div class="text-2xl font-bold text-slate-800 leading-snug">${item.en}</div>
+                    <div class="text-slate-400 text-sm mt-2">${phon(item)}</div>
+                    <div class="text-lg text-slate-600 mt-3">${item.cn}</div>`;
+                frontPh.textContent = '';
+                backTag.textContent = '例句 + 词根';
+                back.innerHTML = `<div class="text-base leading-relaxed">${item.ex ? '💬 ' + item.ex : ''}</div>`;
+                backPh.textContent = '';
+                speak(item.en);
+            } else if (flashMode === 'en2cn') {
+                frontTag.textContent = 'VOCABULARY';
+                front.textContent = item.en;
+                frontPh.textContent = phon(item);
+                backTag.textContent = 'DEFINITION';
+                back.textContent = item.cn;
+                backPh.textContent = '';
+                speak(item.en);
+            } else {
+                frontTag.textContent = '中文 → 想英文';
+                front.textContent = item.cn;
+                frontPh.textContent = '';
+                backTag.textContent = 'VOCABULARY';
+                back.textContent = item.en;
+                backPh.textContent = phon(item);
+                window.speechSynthesis.cancel();
+            }
+            document.getElementById('flashExample').textContent = (flashMode === 'both') ? '' : (item.ex ? '💬 ' + item.ex : '');
+            document.getElementById('flashEty').textContent = (flashMode === 'both') ? (ety(item) ? '🌱 ' + ety(item) : '') : (ety(item) ? '🌱 ' + ety(item) : '');
+            document.getElementById('flashProgressBar').style.width = ((flashIdx + 1) / vocabData.length * 100) + '%';
+            document.getElementById('flashProgressText').textContent = `${flashIdx + 1} / ${vocabData.length}`;
+        }
+        function nextFlashCard() { flashIdx = (flashIdx + 1) % vocabData.length; showFlash(); }
+        function prevFlashCard() { flashIdx = (flashIdx - 1 + vocabData.length) % vocabData.length; showFlash(); }
+        function flipCard() {
+            const inner = document.getElementById('cardInner');
+            inner.classList.toggle('card-flipped');
+            if (inner.classList.contains('card-flipped') && flashMode !== 'both') speak(vocabData[flashIdx].en);
+        }
+
+        /* ===== 测验 ===== */
+        function startQuiz() {
+            currentQuizIdx = 0; score = 0;
+            quizList = shuffle([...vocabData]);
+            document.getElementById('quizResult').classList.add('hidden');
+            document.getElementById('quizContent').classList.remove('hidden');
+            showQuizQuestion();
+        }
+        function showQuizQuestion() {
+            const item = quizList[currentQuizIdx];
+            document.getElementById('quizFeedback').textContent = '';
+            document.getElementById('quizProgress').style.width = (currentQuizIdx / quizList.length * 100) + '%';
+            const types = ['cn2en', 'cn2en', 'en2cn']; // 中→英权重高（默写考这个）
+            if (item.prep) types.push('prep', 'prep');
+            const t = types[Math.floor(Math.random() * types.length)];
+            if (t === 'cn2en') setupChoice(item.cn, item.en, 'CN TO EN', 'cn');
+            else if (t === 'en2cn') setupChoice(item.en, item.cn, 'EN TO CN', 'en');
+            else setupPrepChoice(item);
+        }
+        function setupChoice(q, a, label, qlang) {
+            document.getElementById('quizTypeLabel').textContent = label;
+            document.getElementById('quizQuestion').textContent = q;
+            if (qlang === 'en') speak(q);
+            let opts = [a];
+            while (opts.length < 4) {
+                let r = vocabData[Math.floor(Math.random() * vocabData.length)];
+                let val = qlang === 'en' ? r.cn : r.en;
+                if (!opts.includes(val)) opts.push(val);
+            }
+            renderOptions(shuffle(opts), a);
+        }
+        function setupPrepChoice(item) {
+            document.getElementById('quizTypeLabel').textContent = 'PREPOSITION QUIZ';
+            let q = item.en;
+            const preps = item.prep.split(',');
+            preps.forEach(p => { q = q.replace(new RegExp(`\\b${p}\\b`, 'g'), '____'); });
+            document.getElementById('quizQuestion').textContent = q;
+            const correct = item.prep.replace(/,/g, ' / ');
+            const distractors = ['on','at','to','for','from','by','of','with','up','off','in','after','about','as'];
+            let opts = [correct];
+            while (opts.length < 4) {
+                let r = distractors[Math.floor(Math.random() * distractors.length)];
+                if (preps.length > 1) r += ' / ' + distractors[Math.floor(Math.random() * distractors.length)];
+                if (!opts.includes(r)) opts.push(r);
+            }
+            renderOptions(shuffle(opts), correct);
+        }
+        function renderOptions(opts, correct) {
+            document.getElementById('optionsContainer').innerHTML = opts.map(o => `
+                <button onclick="handleQuizClick(this, '${o.replace(/'/g,"\\'")}', '${correct.replace(/'/g,"\\'")}')"
+                    class="option-btn w-full p-4 text-left border-2 border-slate-100 rounded-2xl hover:border-blue-200 hover:bg-blue-50 font-medium text-slate-700 text-sm">
+                    ${o}
+                </button>
+            `).join('');
+        }
+        function handleQuizClick(btn, selected, correct) {
+            const item = quizList[currentQuizIdx];
+            const feedback = document.getElementById('quizFeedback');
+            document.querySelectorAll('#optionsContainer button').forEach(b => b.disabled = true);
+            if (selected === correct) {
+                btn.classList.add('border-blue-500','bg-blue-50');
+                feedback.textContent = 'CORRECT! 🎉';
+                feedback.className = 'text-center h-6 mt-6 font-bold text-blue-500';
+                removeMistake(item);
+                score++;
+            } else {
+                btn.classList.add('border-rose-400','bg-rose-50');
+                feedback.textContent = `WRONG → ${correct}`;
+                feedback.className = 'text-center h-6 mt-6 font-bold text-rose-400';
+                addMistake(item);
+            }
+            speak(item.en);
+            setTimeout(() => {
+                currentQuizIdx++;
+                if (currentQuizIdx < quizList.length) showQuizQuestion();
+                else {
+                    document.getElementById('quizProgress').style.width = '100%';
+                    document.getElementById('quizContent').classList.add('hidden');
+                    document.getElementById('quizResult').classList.remove('hidden');
+                    document.getElementById('finalScore').textContent = `SCORE: ${score} / ${quizList.length} · 错的已进错词本`;
+                }
+            }, 1100);
+        }
+
+        /* ===== 错词本 ===== */
+        function renderMistakes() {
+            const listEl = document.getElementById('mistakeList');
+            const emptyMsg = document.getElementById('emptyMistakeMsg');
+            const drillBtn = document.getElementById('drillMistakesBtn');
+            if (!mistakes.length) {
+                listEl.innerHTML = ''; emptyMsg.classList.remove('hidden'); drillBtn.classList.add('hidden');
+                return;
+            }
+            emptyMsg.classList.add('hidden'); drillBtn.classList.remove('hidden');
+            drillBtn.textContent = `🔁 只滚这 ${mistakes.length} 条错词`;
+            listEl.innerHTML = mistakes.map(item => `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-rose-100 flex items-center gap-3">
+                    <button onclick="speak('${item.en.replace(/'/g, "\\'")}')" class="p-2 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition shrink-0">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    </button>
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">${item.en}</div>
+                        <div class="text-sm text-rose-500">${item.cn}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        function drillMistakes() {
+            if (!mistakes.length) return;
+            setView('tonight');
+            startTonight([...mistakes]);
+        }
+        function clearMistakes() { mistakes = []; saveMistakes(); renderMistakes(); }
+
+        Object.assign(ETY, {
+    "As the Internet became more accessible, ...": "access（接近）+ -ible（能…的）→ 能被接近 = 可获取、可进入",
+    "be eager to do sth / be eager for sth": "eager 是「急切想做」；anxious 是「焦虑」——两个都跟 to do，但感情色彩相反",
+    "cut seconds off ...": "cut A off B：从 B 里砍掉 A；off 是「去掉」",
+    "cite sth as ...": "cite 引用 → citation 引文；和 site（地点）、sight（视力）同音，拼写靠 c",
+    "the top barrier/obstacle to sth/doing": "to 是介词，后面必须 doing；barrier 偏物理阻隔，obstacle 偏抽象阻碍",
+    "consistently": "consist（始终如一地存在）+ -ent + -ly；形容词 consistent 也是「前后一致的」",
+    "make persistent efforts": "per-（贯穿）+ sist（站）→ 一直站着 = 坚持；同族 insist / resist / assist",
+    "urge sb to do sth / one's urge to do": "名词动词同形；urge sb to do（不能省 to）；urge 比 encourage 更强硬",
+    "draw close / draw near / draw on ...": "draw on = 从…里取用（经验/资金/资源）；draw near 是时间临近，不是空间靠近",
+    "after-sales service": "after-sales 作定语永远带 s，类似 sports meeting",
+    "lengthy": "length + y；带贬义（太长了），中性说 long",
+    "take in (3)": "拿进来：进脑 = 理解；进身体 = 吸收；进圈套 = 欺骗。一个动作三个落点",
+    "sort out": "sort 分类 → 把乱的分类清楚 → 解决；sort out a problem",
+    "restore (2)": "re-（重新）+ store（存放）→ 放回原来的样子 = 恢复 / 修复",
+    "digest v./n.": "di-（分开）+ gest（带）→ 把食物分开带走 = 消化；消化完的浓缩物 = 摘要",
+    "have an appetite for sth": "ap-（朝向）+ pet（追求）→ 追着食物 = 食欲；引申为「对…的欲望」",
+    "apparently": "apparent（明显的）+ ly；≠ seemingly：apparently 是有依据的「显然」，seemingly 只是「看上去」",
+    "namely": "name + ly → 把名字点出来 = 即、也就是；后接具体列举",
+    "consume (3)": "con-（全部）+ sume（拿）→ 全拿走 = 耗尽；consumer 消费者，consumption 消耗",
+    "outlast / outnumber / outweigh / outperform": "out-（超过）+ 动词 = 比…更…；outweigh 最常考：「利大于弊」the benefits outweigh the risks",
+    "electronic receipt": "receive 的名词形式，p 不发音但必须写；拼错是默写重灾区",
+    "seemingly": "seem + ing + ly：只是「看起来」——后文常跟 but 转折",
+    "literacy / literate / illiterate": "和 letter 同源：会认字 = literate；il- 否定前缀 = 文盲",
+    "blank n./adj.": "blank = 白；blanket 是毯子（别混）；fill in the blanks 固定搭配",
+    "The cash is fake.": "fake 名/形两用；比 counterfeit 口语；a fake smile 假笑",
+    "make an attempt to do sth": "attempt 后接 to do；make an attempt at doing 也可；attempt 比 try 正式",
+    "scare sb / feel scared / scary": "-ed 修饰人（感到），-ing 修饰物（令人）；scared / scary 同理 bored / boring",
+    "for each subsequent tooth": "sub-（在下/随后）+ sequ（跟随）→ 随后的；sequence 同根",
+    "dash off a note": "dash 猛冲 → 飞快地写；dash off = 匆匆写出",
+    "a make-up email address": "make up 编造 → make-up 假的（也指化妆）；a made-up story 编的故事",
+    "treat rarity as a strategy": "rare + -ity 名词；treat A as B 把 A 当作 B",
+    "takeaway (2)": "take away：拿走食物 = 外卖；拿走观点 = 要点。英式英语里 takeaway = 外卖店",
+    "limited-edition runs": "edition 版次 + run 一批生产；limited edition 限量版",
+    "time-boxed releases": "time-box 时间盒（给任务框定时间）→ 限时；release 发售/发布",
+    "artifact": "arte（技艺）+ fact（做）→ 人工做出来的东西 = 器物、文物；美式拼写 artifact，英式 artefact",
+    "measure sth by ...": "measure A by B 用 B 衡量 A；被动 be measured by 常考",
+    "entitle (2)": "en-（使）+ title（名分）→ 给名分：给权利（be entitled to）或给标题（a book entitled ...）",
+    "cultural theft": "thief 小偷 → theft 盗窃（名词）；拼写 -eft",
+    "sustain accountability": "sus-（在下）+ tain（握住）→ 从下面托住 = 维持；accountable 对…负责",
+    "literally (2)": "literal + ly；本义「字面上」，口语里 = 真的、简直",
+    "subjective/objective": "subject 主体 → 主观；object 客体 → 客观；一对反义，阅读态度题高频",
+    "defensive": "defend + -ive；get defensive = 变得戒备/辩解",
+    "reserved and cautious": "reserve 保留 → 话少 = 矜持；cautious 谨慎（caution 小心）",
+    "keep the electronic receipt properly": "keep sth properly 妥善保管；properly 修饰 keep 不是 receipt",
+    "it is convenient for sb to do": "con-（一起）+ ven（来）→ 凑到一块儿 = 方便；不能说 sb is convenient",
+    "the folk culture festival": "folk 民间的（folk music / folk tale）；folk 本身是复数集合名词",
+    "travel long distance": "long distance 分开写是名词短语；作定语才加连字符 long-distance（a long-distance call 长途电话）",
+    "Lack of willpower will lead to failure.": "will（意志）+ power（力量）= 意志力；lack of 后接不可数名词；lead to = 导致",
+    "highly disciplined people": "discipline 纪律 → 自我约束 = 自律；highly 修饰形容词/分词，不能说 high disciplined",
+    "habitual": "habit + -ual（形容词后缀）→ 习惯性的；a habitual offender 惯犯"
+});
+
+/* 音标：按“记忆锚点词”给，重音用 ˈ 标出——拼写跟着重音块走 */
+Object.assign(PH, {
+    "As the Internet became more accessible, ...": "/əkˈsesəbl/",
+    "travel long distance": "/ˈtrævl ˌlɒŋ ˈdɪstəns/",
+    "be eager to do sth / be eager for sth": "/ˈiːɡə(r)/",
+    "cut seconds off ...": "/ˈsekəndz/",
+    "Lack of willpower will lead to failure.": "/ˈwɪlpaʊə(r)/",
+    "cite sth as ...": "/saɪt/",
+    "the top barrier/obstacle to sth/doing": "/ˈbæriə(r)/  /ˈɒbstəkl/",
+    "consistently": "/kənˈsɪstəntli/",
+    "highly disciplined people": "/ˈdɪsəplɪnd/",
+    "make persistent efforts": "/pəˈsɪstənt/",
+    "urge sb to do sth / one's urge to do": "/ɜːdʒ/",
+    "draw close / draw near / draw on ...": "/drɔː ɒn/",
+    "after-sales service": "/ˌɑːftəˈseɪlz/",
+    "lengthy": "/ˈleŋθi/",
+    "habitual": "/həˈbɪtʃuəl/",
+    "take in (3)": "/teɪk ɪn/",
+    "sort out": "/sɔːt aʊt/",
+    "restore (2)": "/rɪˈstɔː(r)/",
+    "digest v./n.": "/daɪˈdʒest/ v.  /ˈdaɪdʒest/ n.",
+    "have an appetite for sth": "/ˈæpɪtaɪt/",
+    "apparently": "/əˈpærəntli/",
+    "namely": "/ˈneɪmli/",
+    "consume (3)": "/kənˈsjuːm/",
+    "outlast / outnumber / outweigh / outperform": "/ˌaʊtˈlɑːst/ /ˌaʊtˈnʌmbə/ /ˌaʊtˈweɪ/ /ˌaʊtpəˈfɔːm/",
+    "electronic receipt": "/rɪˈsiːt/",
+    "seemingly": "/ˈsiːmɪŋli/",
+    "literacy / literate / illiterate": "/ˈlɪtərəsi/ /ˈlɪtərət/ /ɪˈlɪtərət/",
+    "blank n./adj.": "/blæŋk/",
+    "The cash is fake.": "/feɪk/",
+    "make an attempt to do sth": "/əˈtempt/",
+    "scare sb / feel scared / scary": "/skeə(r)/ /skeəd/ /ˈskeəri/",
+    "for each subsequent tooth": "/ˈsʌbsɪkwənt/",
+    "dash off a note": "/dæʃ ɒf/",
+    "a make-up email address": "/ˈmeɪkʌp/",
+    "treat rarity as a strategy": "/ˈreərəti/",
+    "takeaway (2)": "/ˈteɪkəweɪ/",
+    "limited-edition runs": "/lɪmɪtɪd ɪˈdɪʃn/",
+    "time-boxed releases": "/taɪm bɒkst/",
+    "artifact": "/ˈɑːtɪfækt/",
+    "measure sth by ...": "/ˈmeʒə(r)/",
+    "entitle (2)": "/ɪnˈtaɪtl/",
+    "cultural theft": "/θeft/",
+    "sustain accountability": "/səˈsteɪn/",
+    "literally (2)": "/ˈlɪtərəli/",
+    "subjective/objective": "/səbˈdʒektɪv/ /əbˈdʒektɪv/",
+    "defensive": "/dɪˈfensɪv/",
+    "reserved and cautious": "/rɪˈzɜːvd/ /ˈkɔːʃəs/",
+    "keep the electronic receipt properly": "/rɪˈsiːt/ /ˈprɒpəli/",
+    "it is convenient for sb to do": "/kənˈviːniənt/",
+    "the folk culture festival": "/fəʊk/"
+});
+
+        window.onload = () => setView('tonight');
+    </script>
+</body>
+</html>
